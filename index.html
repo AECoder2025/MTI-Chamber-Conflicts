@@ -74,6 +74,8 @@
 
   /* desktop: keep original positioning for panel when .bottom-sheet not used */
   .topright-panel.bottom-sheet { display:block; }
+  .topright-panel.bottom-sheet { display:block !important; }
+  .topright-panel[aria-hidden="true"], .topright-panel.hidden-mobile { display:none !important; }
     /* --------------------------
      Panel hide / opener styles
      -------------------------- */
@@ -787,48 +789,95 @@ document.getElementById('refreshBtn').addEventListener('click', () => loadAll())
 // -----------------------------
 // Panel hide / show behaviour
 // -----------------------------
+// -----------------------------
+// Panel hide / show behaviour (REPLACEMENT)
+// Robust handling for desktop + mobile bottom-sheet + overlays
+// -----------------------------
 const panel = document.getElementById('controls');
 const panelOpener = document.getElementById('panelOpener');
 const hideBtn = document.getElementById('hidePanelBtn');
 
-function showPanel() {
-  panelHidden = false;
-  try { panel.style.display = 'block'; } catch(e){}
-  try { panelOpener.style.display = 'none'; } catch(e){}
-  // ensure mini toolbar logic stays consistent
-  updateMiniToolbarVisibility();
-}
-
+// function to forcibly hide the panel (handles mobile bottom-sheet and overlays)
 function hidePanel() {
   panelHidden = true;
-  // On phones: completely hide (no opener)
-  if (isPhoneWidth()) {
-    try { panel.style.display = 'none'; } catch(e){}
-    try { panelOpener.style.display = 'none'; } catch(e){}
-  } else {
-    // On desktop: hide panel and show small opener handle
-    try { panel.style.display = 'none'; } catch(e){}
-    try { panelOpener.style.display = 'flex'; } catch(e){}
-  }
+
+  // If a search overlay is visible, hide it too
+  try { if (typeof hideOverlaySearch === 'function') hideOverlaySearch(); } catch(e){}
+
+  // Remove bottom-sheet mode and hide the panel element
+  try {
+    panel.classList.remove('bottom-sheet');
+    // remove any inline show flags and enforce hidden
+    panel.style.display = 'none';
+  } catch (e) { console.warn('hidePanel: cannot hide panel', e); }
+
+  // Desktop: show opener; Mobile: opener is hidden by CSS, but ensure mini toolbar visible
   updateMiniToolbarVisibility();
+
+  // Give map a chance to recalc size if it becomes visible again later
+  try { setTimeout(() => map.invalidateSize(), 250); } catch(e){}
 }
 
-// wire the new elements (guard in case the DOM isn't ready - they should exist)
+// function to show the panel in an appropriate mode for the current screen size
+function showPanel() {
+  panelHidden = false;
+
+  // Close overlay search (if any) so the panel is the primary focus
+  try { if (typeof hideOverlaySearch === 'function') hideOverlaySearch(); } catch(e){}
+
+  try {
+    if (isPhoneWidth()) {
+      // mobile: show as bottom-sheet so it behaves like the existing mobile UI
+      panel.classList.add('bottom-sheet');
+      panel.style.display = 'block';
+    } else {
+      // desktop: ensure normal panel display
+      panel.classList.remove('bottom-sheet');
+      panel.style.display = 'block';
+    }
+  } catch (e) { console.warn('showPanel: cannot show panel', e); }
+
+  updateMiniToolbarVisibility();
+  try { setTimeout(() => map.invalidateSize(), 250); } catch(e){}
+}
+
+// Wire the Hide button
 if (hideBtn) {
-  hideBtn.addEventListener('click', () => {
+  hideBtn.addEventListener('click', (ev) => {
+    ev.preventDefault();
     hidePanel();
     hideBtn.setAttribute('aria-pressed', 'true');
   });
 }
+
+// Wire the small panel opener (desktop handle)
 if (panelOpener) {
-  panelOpener.addEventListener('click', () => {
+  panelOpener.addEventListener('click', (ev) => {
+    ev.preventDefault();
     showPanel();
     if (hideBtn) hideBtn.setAttribute('aria-pressed', 'false');
   });
 }
 
-// ensure initial visibility matches screen size
+// Ensure mini toolbar expand button still toggles bottom-sheet correctly
+// (this code is safe if you already have a miniExpandBtn listener elsewhere)
+const miniExpandBtnEl = document.getElementById('miniExpandBtn');
+if (miniExpandBtnEl) {
+  miniExpandBtnEl.addEventListener('click', () => {
+    // toggle bottom-sheet visibility on mobile
+    if (panel.classList.contains('bottom-sheet')) {
+      // currently open -> hide
+      hidePanel();
+    } else {
+      // currently closed -> show
+      showPanel();
+    }
+  });
+}
+
+// ensure initial visibility matches screen size + any saved state
 updateMiniToolbarVisibility();
+
 
 document.getElementById('bufferSelect').addEventListener('change', (ev) => { BUFFER_METERS = Number(ev.target.value || 30); loadAll(); });
 
