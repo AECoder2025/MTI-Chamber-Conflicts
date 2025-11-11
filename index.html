@@ -74,6 +74,37 @@
 
   /* desktop: keep original positioning for panel when .bottom-sheet not used */
   .topright-panel.bottom-sheet { display:block; }
+    /* --------------------------
+     Panel hide / opener styles
+     -------------------------- */
+    #panelOpener {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    z-index: 1600;
+    display: none; /* shown by JS on desktop when panel hidden */
+    background: rgba(255,255,255,0.96);
+    border: 1px solid rgba(0,0,0,0.12);
+    box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+    border-radius: 20px;
+    padding: 6px 10px;
+    font-size: 14px;
+    cursor: pointer;
+    min-width: 44px;
+    height: 40px;
+    align-items: center;
+    justify-content: center;
+    }
+
+  /* tiny visual when collapsed (if you want the panel to stay slightly visible) */
+  .topright-panel.collapsed {
+    display: none; /* we use panelOpener as the visible handle instead; keep actual panel hidden */
+  }
+
+  /* ensure the opener hides on phone width (mobile flow) */
+  @media (max-width:600px) {
+    #panelOpener { display: none !important; }
+  }
 
   /* search overlay (fullscreen) */
   #searchOverlay { display:none; position:fixed; inset:0; z-index:1500; background:rgba(0,0,0,0.35); }
@@ -98,6 +129,7 @@
 
   <div class="controls-row">
     <button id="refreshBtn" title="Refresh data">Refresh</button>
+    <button id="hidePanelBtn" title="Hide panel" aria-pressed="false" style="margin-left:6px;">Hide</button>
     <button id="toggleViewBtn" title="Toggle map / list">List view</button>
     <label for="bufferSelect">Buffer</label>
     <select id="bufferSelect" title="Buffer distance (meters)">
@@ -129,11 +161,14 @@
   <div class="info" id="statusLine">Loading…</div>
 </div>
 
+<!-- PANEL OPENER (shown on desktop when panel is hidden) -->
+<button id="panelOpener" aria-hidden="true" title="Open panel" style="display:none;">☰</button>
+<!-- /panel opener -->
+
 <!-- compact floating toolbar for phones -->
 <div class="mini-toolbar" id="miniToolbar" style="display:none;">
   <button id="miniSearchBtn" title="Search" aria-label="Search">🔎</button>
   <button id="miniRefreshBtn" title="Refresh" aria-label="Refresh">🔄</button>
-  <button id="miniBufferBtn" title="Buffer" aria-label="Buffer">📏</button>
   <button id="miniExpandBtn" title="Open menu" aria-label="Open menu">☰</button>
 </div>
 
@@ -168,6 +203,8 @@ let manualClosures = {};
 let closuresBufferedCollection = { type:'FeatureCollection', features: [] };
 let overrideDateTime = null; // if set, evaluate closures at this Date object instead of now
 let isListView = false;
+let panelHidden = false;
+
 
 /* Touch / phone detection */
 const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
@@ -742,46 +779,57 @@ applyBtn.addEventListener('click', () => {
 
 clearBtn.addEventListener('click', () => { overrideDateTime = null; overrideDateEl.value = ''; overrideTimeEl.value = ''; loadAll(); });
 
-/* mobile single-button datetime-local flow */
-function openMobileDateTimePicker() {
-  // create a hidden input datetime-local to trigger native picker
-  let mobileInput = document.getElementById('mobileDatetimeLocal');
-  if (!mobileInput) {
-    mobileInput = document.createElement('input');
-    mobileInput.type = 'datetime-local';
-    mobileInput.id = 'mobileDatetimeLocal';
-    mobileInput.style.position = 'fixed';
-    mobileInput.style.left = '-9999px';
-    document.body.appendChild(mobileInput);
-    const now = new Date();
-    const yyyy = now.getFullYear();
-    const mm = String(now.getMonth()+1).padStart(2,'0');
-    const dd = String(now.getDate()).padStart(2,'0');
-    const hh = String(now.getHours()).padStart(2,'0');
-    const min = String(now.getMinutes()).padStart(2,'0');
-    mobileInput.min = `${yyyy}-${mm}-${dd}T${hh}:${min}`;
-    mobileInput.addEventListener('change', (e) => {
-      const val = e.target.value; if (!val) return;
-      const dt = new Date(val);
-      if (isNaN(dt)) { alert('Invalid date/time'); return; }
-      const now2 = new Date(); if (dt.getTime() <= now2.getTime()) { alert('Please choose a future date/time.'); return; }
-      overrideDateTime = dt;
-      // keep UI consistent: set desktop inputs too
-      try {
-        overrideDateEl.value = val.split('T')[0];
-        overrideTimeEl.value = val.split('T')[1] || '';
-      } catch(e){}
-      loadAll();
-    });
-  }
-  mobileInput.click();
-}
-
 /* initial setup */
 setMinDateTimeInputs();
 
 /* wire up controls */
 document.getElementById('refreshBtn').addEventListener('click', () => loadAll());
+// -----------------------------
+// Panel hide / show behaviour
+// -----------------------------
+const panel = document.getElementById('controls');
+const panelOpener = document.getElementById('panelOpener');
+const hideBtn = document.getElementById('hidePanelBtn');
+
+function showPanel() {
+  panelHidden = false;
+  try { panel.style.display = 'block'; } catch(e){}
+  try { panelOpener.style.display = 'none'; } catch(e){}
+  // ensure mini toolbar logic stays consistent
+  updateMiniToolbarVisibility();
+}
+
+function hidePanel() {
+  panelHidden = true;
+  // On phones: completely hide (no opener)
+  if (isPhoneWidth()) {
+    try { panel.style.display = 'none'; } catch(e){}
+    try { panelOpener.style.display = 'none'; } catch(e){}
+  } else {
+    // On desktop: hide panel and show small opener handle
+    try { panel.style.display = 'none'; } catch(e){}
+    try { panelOpener.style.display = 'flex'; } catch(e){}
+  }
+  updateMiniToolbarVisibility();
+}
+
+// wire the new elements (guard in case the DOM isn't ready - they should exist)
+if (hideBtn) {
+  hideBtn.addEventListener('click', () => {
+    hidePanel();
+    hideBtn.setAttribute('aria-pressed', 'true');
+  });
+}
+if (panelOpener) {
+  panelOpener.addEventListener('click', () => {
+    showPanel();
+    if (hideBtn) hideBtn.setAttribute('aria-pressed', 'false');
+  });
+}
+
+// ensure initial visibility matches screen size
+updateMiniToolbarVisibility();
+
 document.getElementById('bufferSelect').addEventListener('change', (ev) => { BUFFER_METERS = Number(ev.target.value || 30); loadAll(); });
 
 document.getElementById('toggleViewBtn').addEventListener('click', (ev) => {
@@ -790,15 +838,8 @@ document.getElementById('toggleViewBtn').addEventListener('click', (ev) => {
 
 /* mini toolbar actions */
 const miniRefreshBtn = document.getElementById('miniRefreshBtn');
-const miniBufferBtn = document.getElementById('miniBufferBtn');
 const miniExpandBtn = document.getElementById('miniExpandBtn');
 miniRefreshBtn.addEventListener('click', () => loadAll());
-miniBufferBtn.addEventListener('click', () => {
-  // show buffer select briefly
-  const el = document.getElementById('bufferSelect');
-  el.focus();
-  // on some platforms, focus will open native select UI. otherwise user can open full panel.
-});
 miniExpandBtn.addEventListener('click', () => {
   // show the full panel as a bottom sheet
   const panel = document.getElementById('controls');
@@ -806,13 +847,32 @@ miniExpandBtn.addEventListener('click', () => {
   panel.style.display = panel.classList.contains('bottom-sheet') ? 'block' : 'none';
 });
 
-/* make mini toolbar visible when on phone */
+// REPLACEMENT: updateMiniToolbarVisibility (respects panelHidden and shows/hides the opener)
+
 function updateMiniToolbarVisibility() {
   const mt = document.getElementById('miniToolbar');
   const panel = document.getElementById('controls');
-  if (isPhoneWidth()) { mt.style.display = 'flex'; panel.style.display = 'none'; }
-  else { mt.style.display = 'none'; if (!panel.classList.contains('bottom-sheet')) panel.style.display = 'block'; }
+  const opener = document.getElementById('panelOpener');
+
+  if (isPhoneWidth()) {
+    // mobile: always show mini toolbar, hide the desktop opener and panel
+    mt.style.display = 'flex';
+    panel.style.display = 'none';
+    opener.style.display = 'none';
+  } else {
+    // desktop: show either panel or opener depending on panelHidden
+    mt.style.display = 'none';
+    if (panelHidden) {
+      panel.style.display = 'none';
+      opener.style.display = 'flex';
+    } else {
+      opener.style.display = 'none';
+      // only show the panel normally when it isn't used as a bottom-sheet
+      panel.style.display = panel.classList.contains('bottom-sheet') ? 'block' : 'block';
+    }
+  }
 }
+
 window.addEventListener('resize', () => { updateMiniToolbarVisibility(); });
 
 /* wire search overlay open from both mini and main search focus */
@@ -820,26 +880,6 @@ searchInput.addEventListener('focus', () => { if (isPhoneWidth()) showOverlaySea
 
 /* overlay search icon already wired; hook overlay close on Escape */
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { hideOverlaySearch(); } });
-
-/* mini "Check time" behavior: replace date+time inputs on small screens with single picker */
-// Add a small dedicated button to the bottom sheet / mini toolbar by intercepting click on panel
-const mobileCheckBtn = document.createElement('button');
-mobileCheckBtn.textContent = 'Check time';
-mobileCheckBtn.style.marginLeft = '8px';
-mobileCheckBtn.addEventListener('click', openMobileDateTimePicker);
-// append to bottom-sheet when expanded so users can find it on mobile
-const controlsPanel = document.getElementById('controls');
-controlsPanel.appendChild(mobileCheckBtn);
-
-// also provide quick access from mini toolbar (optional)
-const miniQuickCheck = document.createElement('button');
-miniQuickCheck.textContent = '⏱';
-miniQuickCheck.title = 'Check time';
-miniQuickCheck.style.border = 'none';
-miniQuickCheck.style.background = 'transparent';
-miniQuickCheck.style.padding = '8px';
-miniQuickCheck.addEventListener('click', openMobileDateTimePicker);
-miniToolbar.appendChild(miniQuickCheck);
 
 /* initial load */
 loadAll();
