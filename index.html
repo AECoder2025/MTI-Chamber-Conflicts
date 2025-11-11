@@ -890,20 +890,23 @@ document.getElementById('toggleViewBtn').addEventListener('click', (ev) => {
 });
 
 /* mini toolbar actions */
+/* mini toolbar actions */
 const miniRefreshBtn = document.getElementById('miniRefreshBtn');
 const miniExpandBtn = document.getElementById('miniExpandBtn');
-miniRefreshBtn.addEventListener('click', () => loadAll());
-// ADD / KEEP this unified handler instead
-const miniExpandBtn = document.getElementById('miniExpandBtn');
+
+if (miniRefreshBtn) {
+  miniRefreshBtn.addEventListener('click', () => loadAll());
+}
+
 if (miniExpandBtn) {
   miniExpandBtn.addEventListener('click', (ev) => {
-    ev.preventDefault();
-    // Use your showPanel()/hidePanel() so the rest of your state and accessibility flags
-    // (panelHidden, aria-hidden, sizing) stay correct.
+    ev.preventDefault(); // harmless; stops form-submit if button inside a form
+    // keep logic in showPanel()/hidePanel() so panelHidden, aria attributes and sizing are correct
     if (panel.classList.contains('bottom-sheet')) hidePanel();
     else showPanel();
   });
 }
+
 
 // REPLACEMENT: updateMiniToolbarVisibility (respects panelHidden and shows/hides the opener)
 
@@ -959,4 +962,5 @@ loadAll();
 </script>
 </body>
 </html>
+
 
