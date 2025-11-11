@@ -889,8 +889,7 @@ document.getElementById('toggleViewBtn').addEventListener('click', (ev) => {
   if (isListView) showMapView(); else showListView();
 });
 
-/* mini toolbar actions */
-/* mini toolbar actions */
+/* mini toolbar actions — robust toggle for touch + click */
 const miniRefreshBtn = document.getElementById('miniRefreshBtn');
 const miniExpandBtn = document.getElementById('miniExpandBtn');
 
@@ -898,14 +897,46 @@ if (miniRefreshBtn) {
   miniRefreshBtn.addEventListener('click', () => loadAll());
 }
 
-if (miniExpandBtn) {
-  miniExpandBtn.addEventListener('click', (ev) => {
-    ev.preventDefault(); // harmless; stops form-submit if button inside a form
-    // keep logic in showPanel()/hidePanel() so panelHidden, aria attributes and sizing are correct
-    if (panel.classList.contains('bottom-sheet')) hidePanel();
-    else showPanel();
-  });
+// single handler function (use panelHidden state rather than classList to avoid race)
+function handleMiniExpand(ev) {
+  if (ev) {
+    try { ev.preventDefault(); } catch(e){}
+    // some mobile browsers will send both touchend and click; guard duplicates
+  }
+  console.log('miniExpand clicked/touched — panelHidden=', panelHidden, 'panel.classList=', panel.className);
+  if (panelHidden) {
+    showPanel();
+    // ensure state is consistent
+    panelHidden = false;
+    if (typeof hideBtn !== 'undefined' && hideBtn) hideBtn.setAttribute('aria-pressed', 'false');
+  } else {
+    hidePanel();
+    panelHidden = true;
+    if (typeof hideBtn !== 'undefined' && hideBtn) hideBtn.setAttribute('aria-pressed', 'true');
+  }
 }
+
+// attach both touch and click, but avoid adding twice
+if (miniExpandBtn) {
+  // remove any old listeners you may have left (best effort)
+  try { miniExpandBtn.replaceWith(miniExpandBtn.cloneNode(true)); } catch(e){ /* ignore */ }
+  // reacquire element if replaceWith used
+  const freshMiniExpand = document.getElementById('miniExpandBtn') || miniExpandBtn;
+
+  const wrappedHandler = (ev) => {
+    // prevent duplicate handling when both touchend and click fire:
+    if (ev.type === 'click' && ev.detail === 0 && typeof lastTouchTime !== 'undefined' && (Date.now() - lastTouchTime) < 500) {
+      // likely a synthetic click after touch; ignore
+      return;
+    }
+    if (ev.type === 'touchend') lastTouchTime = Date.now();
+    handleMiniExpand(ev);
+  };
+
+  freshMiniExpand.addEventListener('touchend', wrappedHandler, { passive: true });
+  freshMiniExpand.addEventListener('click', wrappedHandler, { passive: false });
+}
+
 
 
 // REPLACEMENT: updateMiniToolbarVisibility (respects panelHidden and shows/hides the opener)
@@ -962,5 +993,6 @@ loadAll();
 </script>
 </body>
 </html>
+
 
 
